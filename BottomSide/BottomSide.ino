@@ -5,18 +5,20 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
   
   #include <Time.h> 
+  #include <math.h>
+  #include <ST7735.h>  
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Version
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  const float thisVer      = 1.01;
-  
+  const float thisVer      = 1.03;
+    
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Sensor Variables
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  const int sensorPressure  = A1;       // Pressure Sensor
+  const int sensorPressure  = 6;        // Pressure Sensor
   const int sensorTemp	    = A2;       // Temperature Sensor
   const int sensorHiTemp    = A3;       // High Limit Sensor
   const int inputButton     = A4;       // Analog Input for Button
@@ -49,12 +51,6 @@
   int tempMin               = 45;       // Hard Minimum Temperature Setting  
   int pressureMin           = 1;        // Minimum Pressure Setting
   int pressureMax           = 1024;     // Maximum Pressure Setting
-  
-  int calibrateReadL        = 707;
-  int calibrateTempL        = 41;
-
-  int calibrateReadH        = 130;
-  int calibrateTempH        = 184;
     
   int calibrateOffset       = 0;
   
@@ -68,7 +64,6 @@
   int tempCount             = 0;       // How many times we've sampled temperature
   int tempTotal1            = 0;       // Total Temperature Count
   int tempTotal2            = 0;       // Total Temperature Count  
-  int pressure              = -1;      // Pressure Setting
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Current Statuses
@@ -185,6 +180,7 @@
     cycleTime();
     checkTemp();
     processAll();
+    checkPressure();
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -197,8 +193,8 @@
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   boolean checkPressure() {
-    int pressure = analogRead(sensorPressure);
-    return (pressure >= pressureMin && pressure <= pressureMax);
+    if (digitalRead(sensorPressure) == HIGH) Serial.println("OK"); else Serial.println("FAIL");
+    return (digitalRead(sensorPressure) == HIGH);
   } 
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -206,18 +202,11 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   void checkTemp() { 
-    tempTotal1    = tempTotal1 + analogRead(sensorTemp);  
-    tempTotal2    = tempTotal2 + analogRead(sensorHiTemp);    
-    tempCount     = tempCount + 1;
-    if (tempCount > 1000) {
-      temperature1 = convertTemperature((tempTotal1 / tempCount));
-      temperature1 = convertTemperature((tempTotal2 / tempCount));
-      testInteger("Current Temperature #1", temperature1);
-      testInteger("Current Temperature #2", temperature2);      
-      tempTotal1   = (tempTotal1 / tempCount) * 50;
-      tempTotal2   = (tempTotal2 / tempCount) * 50;
-      tempCount    = 50;
-    }      
+     temperature1 = convertTemperature(analogRead(sensorTemp));
+     temperature2 = convertTemperature(analogRead(sensorHiTemp));
+     testInteger("Current Temperature #1", temperature1);
+     testInteger("Current Temperature #2", temperature2);      
+     delay(1000);
   }
  
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -247,7 +236,6 @@
            cycleRemaining        = -1;
            cycleType             = 'X';           
          }
-         testInteger("Current Mode", currentMode);         
          break;
        case 3 : 
          tempSet = (tempSet == tempMax) ? tempMax : tempSet + 1; 
@@ -302,8 +290,6 @@
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
   
   void processAll() { 
-    testInteger("currentMode", currentMode);
-    testString("CycleType", String(cycleType));
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Check if we're below the minimum Temperature or need to hold On/Off
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
@@ -457,7 +443,13 @@
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
   
   int convertTemperature(int sensorTemp) { 
-      return 72;  
+     double Temp;
+     Temp = log(((10240000/sensorTemp) - 10000));
+     Temp = 1 / (0.001129148 + (0.000234125 + (0.0000000876741 * Temp * Temp ))* Temp );
+     Temp = Temp - 273.15;              // Convert Kelvin to Celsius
+     Temp = (Temp * 9.0)/ 5.0 + 32.0; // Celsius to Fahrenheit - comment out this line if you need Celsius
+     Serial.println(Temp);
+     return int(Temp);
   }
  
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -489,7 +481,6 @@
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     if (cycleType == 'X' && holdCycleStart == hour() && minute() == 0) { 
       int i;
-      testInteger("WE HERE", weekday());
       for (i = 0; i < sizeof(holdCycleDay) - 1; i++){
          if (holdCycleDay[i] == weekday()) startCycle('H');
       }
