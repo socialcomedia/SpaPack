@@ -44,17 +44,30 @@
 //|  High Lows
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  int tempMax               = 105;      // Maximum Temperature Setting
+  int tempFail              = 108;      // Maximum Temperature
+  int tempMax               = 105;      // Maximum Configurable Temperature Setting
   int tempMin               = 45;       // Hard Minimum Temperature Setting  
   int pressureMin           = 1;        // Minimum Pressure Setting
   int pressureMax           = 1024;     // Maximum Pressure Setting
+  
+  int calibrateReadL        = 707;
+  int calibrateTempL        = 41;
+
+  int calibrateReadH        = 130;
+  int calibrateTempH        = 184;
+    
+  int calibrateOffset       = 0;
+  
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Analog Readings
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  int temperature1          = -1;      // Current Temperature Probe #1
-  int temperature2          = -1;      // Current Temperature Probe #1  
+  int temperature1          = 70;      // Current Temperature Probe #1
+  int temperature2          = 70;      // Current Temperature Probe #1  
+  int tempCount             = 0;       // How many times we've sampled temperature
+  int tempTotal1            = 0;       // Total Temperature Count
+  int tempTotal2            = 0;       // Total Temperature Count  
   int pressure              = -1;      // Pressure Setting
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -157,7 +170,6 @@
     //| Get Start Up Temperatures
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     checkTemp();    
-    checkTemp();
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -171,6 +183,7 @@
       handleSerial(incomingByte);
     }
     cycleTime();
+    checkTemp();
     processAll();
   }
 
@@ -193,10 +206,18 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   void checkTemp() { 
-    int tempRead1 = analogRead(sensorTemp);
-    temperature1 = convertTemperature(tempRead1);
-    int tempRead2 = analogRead(sensorHiTemp);
-    temperature2 = convertTemperature(tempRead2);    
+    tempTotal1    = tempTotal1 + analogRead(sensorTemp);  
+    tempTotal2    = tempTotal2 + analogRead(sensorHiTemp);    
+    tempCount     = tempCount + 1;
+    if (tempCount > 1000) {
+      temperature1 = convertTemperature((tempTotal1 / tempCount));
+      temperature1 = convertTemperature((tempTotal2 / tempCount));
+      testInteger("Current Temperature #1", temperature1);
+      testInteger("Current Temperature #2", temperature2);      
+      tempTotal1   = (tempTotal1 / tempCount) * 50;
+      tempTotal2   = (tempTotal2 / tempCount) * 50;
+      tempCount    = 50;
+    }      
   }
  
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -370,7 +391,7 @@
           //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
           //| See if we're above Maximum Temperature
           //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||          
-          if (temperature1 > tempMax || temperature2 > tempMax) { 
+          if (temperature1 > tempFail || temperature2 > tempFail) { 
             digitalWrite(relayHeater,  LOW); 
             testString("Maximum Temperature Overage", "Error");            
             break;
@@ -457,10 +478,6 @@
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     if (currentMin == actualMinute) return false;
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Only Poll Once a Minute to prevent crazy on/offs on temperature fluctuations
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    checkTemp();
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Handle Current Cycle
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     if (cycleRemaining > -1) cycleRemaining--;
@@ -505,11 +522,11 @@
 
   void testInteger(String message, int data) { 
     String strSep = " => ";
-//    Serial.println(message + strSep + data);
+    Serial.println(message + strSep + data);
   }
   
   void testString(String message, String data) { 
     String strSep = " => ";
-//    Serial.println(message + strSep + data);
+    Serial.println(message + strSep + data);
   }
   
