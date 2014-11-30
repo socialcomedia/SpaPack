@@ -54,17 +54,17 @@
 //|  Button Resistances
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  const int btnLightLow     = 101;      // Analog Low for Light Button
-  const int btnLightHigh    = 200;      // Analog High for Light Button
+  const int btnLightLow     = 585;      // Analog Low for Light Button
+  const int btnLightHigh    = 625;      // Analog High for Light Button
 
-  const int btnModeLow      = 201;      // Analog Low for Mode Button
-  const int btnModeHigh     = 300;      // Analog High for Mode Button
+  const int btnModeLow      = 900;      // Analog Low for Mode Button
+  const int btnModeHigh     = 950;      // Analog High for Mode Button
 
-  const int btnUpLow        = 301;      // Analog Low for Temp Up Button
-  const int btnUpHigh       = 400;      // Analog High for Temp Up Button
+  const int btnUpLow        = 275;      // Analog Low for Temp Up Button
+  const int btnUpHigh       = 325;      // Analog High for Temp Up Button
 
-  const int btnDownLow      = 401;      // Analog Low for Temp Down Button
-  const int btnDownHigh     = 500;      // Analog High for Temp Down Button
+  const int btnDownLow      = 750;      // Analog Low for Temp Down Button
+  const int btnDownHigh     = 800;      // Analog High for Temp Down Button
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  High Lows
@@ -224,8 +224,8 @@
     }
     checkTemp();
     cycleTime();
-    processAll();
-    checkPressure();
+    buttonPress(-1);
+    processAll();    
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -283,7 +283,7 @@
     if (buttonRead >= btnModeLow && buttonRead <= btnModeHigh)   button = 2;
     if (buttonRead >= btnUpLow && buttonRead <= btnUpHigh)       button = 3;
     if (buttonRead >= btnDownLow && buttonRead <= btnDownHigh)   button = 4;    
-    testInteger("Button Press", button);
+    if (buttonRead > 0)  testInteger("Button Press", buttonRead);
     switch(button) { 
        case 1 : 
          statusLight = (statusLight == 0) ? 1 : 0; 
@@ -308,7 +308,7 @@
          testInteger("Temperature Down", tempSet);         
          break;
     }
-    if (button != 0) delay(250); // Prevent Bounce
+    if (button != 0) delay(100); // Prevent Bounce
   }
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
