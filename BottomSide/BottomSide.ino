@@ -1,5 +1,3 @@
-#include <Servo.h>
-
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  SpaPack v1.0
 //|
@@ -16,16 +14,16 @@
 //|  Version
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  const float thisVer      = 1.11;
+  const float thisVer      = 1.13;
     
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Sensor Variables
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  const int sensorPressure  = 12;        // Pressure Sensor
-  const int sensorTemp	    = A2;       // Temperature Sensor
-  const int sensorHiTemp    = A3;       // High Limit Sensor
-  const int inputButton     = A4;       // Analog Input for Button
+  const int sensorPressure  = 2;        // Pressure Sensor
+  const int sensorTemp	    = A1;       // Temperature Sensor
+  const int sensorHiTemp    = A2;       // High Limit Sensor
+  const int inputButton     = A3;       // Analog Input for Button
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Create the TFT/LCD
@@ -41,15 +39,15 @@
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Relays
-//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
   
-  const int relayLight      = 7;       // Digital Pinout for Lighting   
-  const int relayBlower     = 6;       // Digital Pinout for Blower
-  const int relayAux        = 5;       // Digital Pinout for Aux/Ozone  (110V 10AMP SSR)
-  const int relayHigh       = 4;        // Digital Pinout for Motor High (110V 10AMP SSR)
-  const int relayLow        = 3;        // Digital Pinout for Motor Low  (110V 10AMP SSR)
-  const int relayHeater     = 2;        // Digital Pinout for Heater     (220V 30AMP SSR)
-
+  const int relayLow        = 2;        // Digital Pinout for Motor Low  (110V 10AMP SSR)
+  const int relayHigh       = 3;        // Digital Pinout for Motor High (110V 10AMP SSR)
+  const int relayBlower     = 4;        // Digital Pinout for Blower
+  const int relayAux        = 5;        // Digital Pinout for Aux/Ozone  (110V 10AMP SSR)
+  const int relayHeater     = 6;        // Digital Pinout for Heater     (220V 30AMP SSR)
+  const int relayLight      = 7;        // Digital Pinout for Lighting 
+  
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Button Resistances
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
@@ -65,6 +63,8 @@
 
   const int btnDownLow      = 750;      // Analog Low for Temp Down Button
   const int btnDownHigh     = 800;      // Analog High for Temp Down Button
+  
+  int lastButton            = 0;
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  High Lows
@@ -208,7 +208,7 @@
     //| Here we Go!
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     tft.println("Loading..");
-    delay(100);
+    delay(1000);
     clearScreen();
   }
 
@@ -283,7 +283,9 @@
     if (buttonRead >= btnModeLow && buttonRead <= btnModeHigh)   button = 2;
     if (buttonRead >= btnUpLow && buttonRead <= btnUpHigh)       button = 3;
     if (buttonRead >= btnDownLow && buttonRead <= btnDownHigh)   button = 4;    
-    if (buttonRead > 0)  testInteger("Button Press", buttonRead);
+    //if (buttonRead > 100)  
+//    testInteger("Button Press", buttonRead);
+    if (button != lastButton) lastButton = button; else return;
     switch(button) { 
        case 1 : 
          statusLight = (statusLight == 0) ? 1 : 0; 
@@ -308,7 +310,6 @@
          testInteger("Temperature Down", tempSet);         
          break;
     }
-    if (button != 0) delay(100); // Prevent Bounce
   }
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -522,8 +523,9 @@
     colorBG = (digitalRead(relayHigh) == HIGH || digitalRead(relayLow) == HIGH) ? ST7735_WHITE : ST7735_BLACK;
     colorX  = (digitalRead(relayHigh) == HIGH || digitalRead(relayLow) == HIGH) ? ST7735_BLACK : ST7735_WHITE;
     textX  = "OFF";
-    textX  = (digitalRead(relayHigh) == HIGH || digitalRead(relayLow) == HIGH)  ? "LOW" : textX;
-    textX  = (digitalRead(relayHigh) == HIGH) ? "MAX" : textX;
+    textX  = (digitalRead(relayLow) == HIGH)  ? "LOW" : textX;
+    textX  = (digitalRead(relayHigh) == HIGH) ? "MAX" : textX; 
+    if (digitalRead(relayHigh) == HIGH) testString("HIGH",textX); else testString("LOW",textX);
     tft.fillRect(118,   0,  42,  24, colorBG);        
     tft.setCursor(122,5);
     tft.setTextColor(colorX);
@@ -595,7 +597,7 @@
         }      
         break;
     }    
-    offsetX  = tftOffset(textX, 150, 140, 130, 125, 120);    
+    offsetX  = tftOffset(textX, 150, 140, 130, 125, 125);    
     colorBG = (textX != "IDLE") ? ST7735_WHITE : ST7735_BLACK;
     colorX  = (textX != "IDLE") ? ST7735_BLACK : ST7735_WHITE;
     colorX  = (textX != "IDLE") ? ST7735_BLACK : ST7735_WHITE;
@@ -604,7 +606,19 @@
     tft.setCursor(offsetX,110);
     tft.setTextColor(colorX);
     tft.setTextSize(1);
-    tft.print(textX);    
+    tft.print(textX);  
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //| Mark How Many Minutes
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    textX    = String(cycleRemaining);
+    offsetX  = tftOffset(textX, 150, 140, 130, 125, 125);    
+    colorBG  = (cycleType == 'X') ? ST7735_BLACK : ST7735_RED;
+    colorX   = ST7735_WHITE;
+    tft.fillRect(93, 100,  25,  26, colorBG);            
+    tft.setCursor(offsetX,110);
+    tft.setTextColor(colorX);
+    tft.setTextSize(1);
+    tft.print(textX);  
   } 
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
