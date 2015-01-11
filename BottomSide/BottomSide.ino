@@ -6,15 +6,14 @@
   
   #include <Time.h> 
   #include <math.h>
-  #include <Adafruit_GFX.h>    // Core graphics library
-  #include <Adafruit_ST7735.h> // Hardware-specific library
   #include <SPI.h> 
+  #include <Wire.h>   
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Version
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  const float thisVer      = 1.15;
+  const float thisVer      = 1.17;
     
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Sensor Variables
@@ -25,18 +24,6 @@
   const int sensorHiTemp    = A2;       // High Limit Sensor
   const int inputButton     = A3;       // Analog Input for Button
   
-//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-//|  Create the TFT/LCD
-//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
-  
-  const int lcdSCLK         = 13;       // Default Pins/Just Reminding
-  const int lcdMosi         = 11;       // Default Pins/Just Reminding
-  const int lcdCS           = 10;
-  const int lcdDC           = 9;
-  const int lcdReset        = 0;  
-  String lcdStatus          = "";   // Used to determine when to update the screen
-  Adafruit_ST7735 tft = Adafruit_ST7735(lcdCS,  lcdDC, lcdReset);    
-
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Relays
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
@@ -81,9 +68,7 @@
 
   int temperature1          = -1;      // Current Temperature Probe #1
   int temperature2          = -1;      // Current Temperature Probe #1  
-  int tempCount             = 0;       // How many times we've sampled temperature
-  int tempTotal1            = 0;       // Total Temperature Count
-  int tempTotal2            = 0;       // Total Temperature Count  
+  int tempCount             = 1000;   // How many cycles since we sampled temperature
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Current Statuses
@@ -146,24 +131,6 @@
     Serial.begin(9600);
     Serial.println("Setting up the system..");
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Get Start Up Temperatures
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    checkTemp();        
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Start up the TFT
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    tft.initR(INITR_BLACKTAB);
-    clearScreen();
-    tft.setRotation(1);  
-    tft.setTextWrap(true);
-    tft.setCursor(0, 0);
-    tft.setTextColor(ST7735_WHITE);
-    tft.println(" ");        
-    tft.println("SpaPack v" + String(thisVer));        
-    tft.println("Ralph C Ferrara Jr. 2014.");
-    tft.println(" ");
-    tft.println("Current Temperature : " + String(getTemp()) + "f");   
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Setting the Default Date/Time
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     setTime(12,0,0,1,1,11);    
@@ -202,14 +169,11 @@
       holdCycleLength       = 10;
       heaterMaximum         = 6;
       lightMaximum          = 10;
-      tft.println("Test Mode On!..");    
     }
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Here we Go!
+    //| Shorten Times for Test Mode
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    tft.println("Loading..");
-    delay(1000);
-    clearScreen();
+    Wire.begin(); //join I2C as master    
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -224,8 +188,8 @@
     }
     checkTemp();
     cycleTime();
-    buttonPress(-1);
-    processAll();    
+    processAll();   
+    buttonPress(-1, true);
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -245,7 +209,7 @@
 //| Set Temperature
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
-  int getTemp() { 
+  int getTemp() {
      return int((temperature1 + temperature2) / 2);
   }
   
@@ -254,28 +218,20 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   boolean checkTemp() { 
-    temperature1 = 72;
-    temperature2 = 72;
-    return true;
-    
-    
-    tempTotal1 += analogRead(sensorTemp);
-    tempTotal2 += analogRead(sensorHiTemp);    
+    if (tempCount > 1000) { 
+      temperature1 = convertTemperature(analogRead(sensorTemp));
+      temperature2 = convertTemperature(analogRead(sensorHiTemp));  
+      tempCount    = 0;
+    }
     tempCount++;
-    if (tempCount > 1000 || temperature1 == -1 || temperature2 == -1) { 
-      temperature1 = convertTemperature(int(tempTotal1 / tempCount));
-      temperature2 = convertTemperature(int(tempTotal2 / tempCount));
-      tempTotal1 = 0;
-      tempTotal2 = 0;
-      tempCount  = 0;       
-    } 
 }
  
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //| Button Interrupt
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
-  void buttonPress(int testButton) { 
+  void buttonPress(int testButton, boolean debounce) { 
+    return;
     int button     = 0;
     int buttonRead = analogRead(inputButton);
     if (testButton > -1) buttonRead = testButton; // Handle Test Mode Serial
@@ -283,9 +239,7 @@
     if (buttonRead >= btnModeLow && buttonRead <= btnModeHigh)   button = 2;
     if (buttonRead >= btnUpLow && buttonRead <= btnUpHigh)       button = 3;
     if (buttonRead >= btnDownLow && buttonRead <= btnDownHigh)   button = 4;    
-    //if (buttonRead > 100)  
-//    testInteger("Button Press", buttonRead);
-    if (button != lastButton) lastButton = button; else return;
+    if (debounce == true || button != lastButton) lastButton = button; else return;
     switch(button) { 
        case 1 : 
          statusLight = (statusLight == 0) ? 1 : 0; 
@@ -364,13 +318,11 @@
         digitalWrite(relayAux, LOW);
         digitalWrite(relayLight, LOW);
         return false;
-    }
-    
+    }    
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Check if we're below the minimum Temperature or need to hold On/Off
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     int overRideMinimum = (temperature1 < tempMin) ? 1 : 0;
-    if (overRideMinimum == 1) testInteger("OverRide Minimum", temperature1);    
     int holdStatus = (temperature1 <= tempSet) ? 1 : 0;    
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Check for Bad Thermistor / Bad Readings
@@ -458,7 +410,7 @@
       //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
       //| Handle the Error Cycle
       //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||          
-      if (statusError == 0) errorCycle = 5;      
+      if (statusError == 0) errorCycle = 5;
       updateScreen();
   }
 
@@ -467,196 +419,49 @@
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   boolean updateScreen() {
-    String textX = "";    
-    int offsetX  = 0;   
-    int colorBG  = 0; 
-    int colorX   = 0;    
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Create Comparison String 
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    textX = String(tempSet) + String(getTemp()) + String(digitalRead(relayLow)) + String(digitalRead(relayHigh)) + String(digitalRead(relayHeater)) +  String(digitalRead(relayBlower)) + String(digitalRead(relayLight)) + String(currentMode) + String(cycleType);
-    if (textX == lcdStatus) return(false);
-    lcdStatus = textX;
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Create Areas x,y,w,h
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    tft.setTextWrap(false);    
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Clear Main Area
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    tft.fillRect(0,     0, 115, 126, ST7735_BLACK);    
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| ERROR CODE
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||        
-    tft.setTextColor(ST7735_BLUE);
-    tft.setTextSize(1);
-    tft.setCursor(5,2);        
-    textX = "ERR";
-    tft.fillRect(0,     0, 115, 15, (statusError == 0) ? ST7735_BLACK : ST7735_RED);              
-    switch(statusError) { 
-      case 101 : tft.print("LOW PRESSURE"); break;
-      case 102 : tft.print("TEMP 2 DIFFERENT"); break;
-      case 103 : tft.print("TEMP OVERAGE"); break;
-      case 104 : tft.print("MOTOR OFF"); break;      
-      case 105 : tft.print("BAD THERMISTOR"); break;            
-      default  : textX    = String(tempSet);
-    }
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Write the Main Temperature
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    textX    = (statusError == 0) ? String(getTemp()) : "ERR";    
-    offsetX  = tftOffset(textX, 42, 22, 3, 0, 0);
-    tft.setCursor(offsetX,26);
-    tft.setTextColor(ST7735_WHITE);
-    tft.setTextSize(6);
-    tft.print(textX);    
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Write the Set Temperature
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||            
-    textX    = (statusError == 0) ? String(tempSet) : "ERR";    
-    offsetX  = tftOffset(textX, 50, 43, 26, 0, 0);
-    tft.setCursor(offsetX,80);
-    tft.setTextColor(ST7735_WHITE);
-    tft.setTextSize(3);
-    tft.print(textX);
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Write the Farenheit
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    if (statusError == 0){ 
-      tft.setCursor(100,15);
-      tft.setTextColor(ST7735_WHITE);
-      tft.setTextSize(1);
-      tft.print("F");
-      tft.setCursor(100,80);
-      tft.setTextColor(ST7735_WHITE);
-      tft.setTextSize(1);
-      tft.print("F");    
-    }
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Write the Motor Speed
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    colorBG = (digitalRead(relayHigh) == HIGH || digitalRead(relayLow) == HIGH) ? ST7735_WHITE : ST7735_BLACK;
-    colorX  = (digitalRead(relayHigh) == HIGH || digitalRead(relayLow) == HIGH) ? ST7735_BLACK : ST7735_WHITE;
-    textX  = "OFF";
-    textX  = (digitalRead(relayLow) == HIGH)  ? "LOW" : textX;
-    textX  = (digitalRead(relayHigh) == HIGH) ? "MAX" : textX; 
-    if (digitalRead(relayHigh) == HIGH) testString("HIGH",textX); else testString("LOW",textX);
-    tft.fillRect(118,   0,  42,  24, colorBG);        
-    tft.setCursor(122,5);
-    tft.setTextColor(colorX);
-    tft.setTextSize(2);
-    tft.print(textX); 
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Write the Heater
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    colorBG = (digitalRead(relayHeater) == HIGH) ? ST7735_WHITE : ST7735_BLACK;
-    colorX  = (digitalRead(relayHeater) == HIGH) ? ST7735_BLACK : ST7735_WHITE;
-    tft.fillRect(118,  25,  42,  24, colorBG);
-    tft.setCursor(127,34);
-    tft.setTextColor(colorX);
-    tft.setTextSize(1);
-    tft.print("HEAT");
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Write the Blower
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    colorBG = (digitalRead(relayBlower) == HIGH) ? ST7735_WHITE : ST7735_BLACK;
-    colorX  = (digitalRead(relayBlower) == HIGH) ? ST7735_BLACK : ST7735_WHITE;
-    tft.fillRect(118,  50,  42,  24, colorBG);    
-    tft.setCursor(130,59);
-    tft.setTextColor(colorX);
-    tft.setTextSize(1);
-    tft.print("AIR");
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Write the Light
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    colorBG = (digitalRead(relayLight) == HIGH) ? ST7735_WHITE : ST7735_BLACK;
-    colorX  = (digitalRead(relayLight) == HIGH) ? ST7735_BLACK : ST7735_WHITE;
-    tft.fillRect(118,  75,  42,  24, colorBG);        
-    tft.setCursor(124,84);
-    tft.setTextColor(colorX);
-    tft.setTextSize(1);
-    tft.print("LIGHT");
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Write the Cycle
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    switch (cycleType) { 
-      case 'X'  : textX = "IDLE"; break; // No Cycle
-      case 'C'  : textX = "CLEAN"; break; // Clean Cycle
-      case 'H'  : textX = "HOLD";  break; // Hold Cycle
-      case 'R'  : 
-        textX = "RUN"; 
-        //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-        //| Write the Mode Steps
-        //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-        switch (currentMode){
-          case 0 : 
-            tft.fillRect(27, 120, 20, 6, ST7735_BLACK);    
-            tft.fillRect(49, 120, 20, 6, ST7735_BLACK);    
-            tft.fillRect(71, 120, 20, 6, ST7735_BLACK);                
-            break;
-          case 1 : 
-            tft.fillRect(27, 120, 20, 6, ST7735_WHITE);    
-            tft.drawRect(49, 120, 20, 6, ST7735_WHITE);    
-            tft.drawRect(71, 120, 20, 6, ST7735_WHITE);    
-            break;          
-          case 2 : 
-            tft.fillRect(27, 120, 20, 6, ST7735_WHITE);    
-            tft.fillRect(49, 120, 20, 6, ST7735_WHITE);    
-            tft.drawRect(71, 120, 20, 6, ST7735_WHITE);    
-            break;          
-          case 3 : 
-            tft.fillRect(27, 120, 20, 6, ST7735_WHITE);    
-            tft.fillRect(49, 120, 20, 6, ST7735_WHITE);    
-            tft.fillRect(71, 120, 20, 6, ST7735_WHITE);    
-            break;          
-        }      
-        break;
-    }    
-    offsetX  = tftOffset(textX, 150, 140, 130, 125, 125);    
-    colorBG = (textX != "IDLE") ? ST7735_WHITE : ST7735_BLACK;
-    colorX  = (textX != "IDLE") ? ST7735_BLACK : ST7735_WHITE;
-    colorX  = (textX != "IDLE") ? ST7735_BLACK : ST7735_WHITE;
-    colorX  = (textX != "IDLE") ? ST7735_BLACK : ST7735_WHITE;    
-    tft.fillRect(118, 100,  42,  26, colorBG);            
-    tft.setCursor(offsetX,110);
-    tft.setTextColor(colorX);
-    tft.setTextSize(1);
-    tft.print(textX);  
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Mark How Many Minutes Remain in Cycle
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    textX    = String(cycleRemaining);
-    offsetX  = tftOffset(textX, 103, 100, 96, 94, 93);    
-    colorBG  = (cycleType == 'X') ? ST7735_BLACK : ST7735_RED;
-    colorX   = ST7735_WHITE;
-    tft.fillRect(93, 100,  25,  27, colorBG);            
-    if (cycleRemaining >= 0 ) { 
-      tft.setCursor(offsetX,110);
-      tft.setTextColor(colorX);
-      tft.setTextSize(1);
-      tft.print(textX);  
-    }
-  } 
+//  UP(2)|TEMP(3)|SETTEMP(3)|MOTOR(1)-0,1,2|BLOW(1)|AUX(1)|HEAT(1)|LIGHT(1)|ERROR(3)|CYCLE(1)|REMAIN(4)|TIME(5);
+//  UP|070|072|0|0|0|0|0|105|X|-002|12:00
+    String fullText = "";
+    fullText += "UP|";
+    fullText += strPad(String(getTemp()), 3, '0') + '|';
+    fullText += strPad(String(tempSet), 3, '0') + '|';
+    fullText += String(statusMotor) + '|';
+    fullText += String(statusBlower) + '|';
+    fullText += String(statusAux) + '|';    
+    fullText += String(statusHeater) + '|';        
+    fullText += String(statusLight) + '|';
+    fullText += strPad(String(statusError),3,'0') + '|';
+    fullText += String(cycleType) + '|';    
+    fullText += strPad(String(cycleRemaining),4,'0') + '|';
+    fullText += String(hourFormat12()) + ':' + strPad(String(minute()),2,'0');
+    Serial.println(fullText);
+    char charBuf[38];    
+    fullText.toCharArray(charBuf, 38);
+
+    Wire.beginTransmission(4);
+    Wire.write(charBuf);
+    Wire.endTransmission();
+    
+    delay(500);   
+  }     
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //| Private Functions 
 //| 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
-
-  //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-  //| Set Offset for LCD Text
-  //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-
-  int tftOffset(String text, int len1, int len2, int len3, int len4, int len5) { 
-    if (text.length() == 1) return(len1);
-    if (text.length() == 2) return(len2);
-    if (text.length() == 3) return(len3);    
-    if (text.length() == 4) return(len4);
-    if (text.length() == 5) return(len5);
-    return(len1);
+  String strPad(String strToPad, int padLength, char padChar) { 
+    boolean neg = (strToPad.substring(0,1) == "-");
+    if (neg) strToPad = strToPad.substring(1);
+    String resp = "";
+    int toPad = (padLength - strToPad.length());
+    if (neg) toPad = toPad - 1;
+    int i = 0;
+    for(i=0;i<toPad;i++) resp += padChar;
+    resp += strToPad;
+    return (neg) ? '-' + resp : resp;
   }
-  
+
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
   //| Set Statuses
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
@@ -674,10 +479,10 @@
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   void handleSerial(byte incomingByte) { 
-    if (incomingByte == 119) buttonPress(btnUpLow);      // KeyPress W
-    if (incomingByte == 115) buttonPress(btnDownLow);    // KeyPress S
-    if (incomingByte == 97)  buttonPress(btnLightLow);   // KeyPress A
-    if (incomingByte == 100) buttonPress(btnModeLow);    // KeyPress D 
+    if (incomingByte == 119) buttonPress(btnUpLow,    false);      // KeyPress W
+    if (incomingByte == 115) buttonPress(btnDownLow,  false);    // KeyPress S
+    if (incomingByte == 97)  buttonPress(btnLightLow, false);   // KeyPress A
+    if (incomingByte == 100) buttonPress(btnModeLow,  false);    // KeyPress D 
     if (incomingByte == 99)  setTime(22,59,58,21,11,14); // KeyPress C Test Cleaning Cycle
     if (incomingByte == 104) setTime(17,59,58,22,11,14); // KeyPress H Test Hold Cycle
   }
@@ -704,10 +509,6 @@
     //| Fetch the Actual Minute
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     int actualMinute = minute();
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Test Mode
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    if (testMode == true) {actualMinute = currentMin + 1; delay(500);} // Fake a minute in 500ms
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Exit if it's still the same minute
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
@@ -754,14 +555,6 @@
     currentMin = minute();
   }
 
-  //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-  //| Clear Screen
-  //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-  
-  void clearScreen() { 
-    tft.fillScreen(ST7735_BLACK);    
-  }
-  
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
   //| Test Log
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    

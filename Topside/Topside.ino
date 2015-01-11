@@ -7,7 +7,7 @@
   #include <TFT.h>
   #include <Wire.h>    
   #include <cstddef.h>
-
+ 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  TFT Color Bits
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
@@ -15,6 +15,21 @@
   #define BLUE_BITS 5
   #define GREEN_BITS 6
   #define RED_BITS 5  
+
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+//|  Current Settings
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+
+  boolean statusLight           = false;        // 0 = Off / 1 = On
+  boolean statusMotor           = false;        // 0 = Off / 1 = Low / 2 = High
+  boolean statusHeater          = false;        // 0 = Off / 1 = On
+  boolean statusBlower          = false;        // 0 = Off / 1 = On
+  boolean statusAux             = false;        // 0 = Off / 1 = On    
+  boolean statusError           = false;
+  char currentCycle         = 'Z';       // Current Cycle
+  int currentTemp           = -1;        // Currently Displaying Temperature
+  int cycleRemain           = -1;        // Time Remaining in Cycle  
+  int tempSet               = -1;        // Temperature Currently Set To    
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Globals
@@ -41,30 +56,37 @@
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
     char* attempt = "Attempting Communications with Master..";
     skinnyText(attempt, 110, textLeft(attempt, 150, 1, 6), 1, WHITE);
+    makeClear();
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //|  Start Wire Sync
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
-    Serial.println("Syncing");
-    Wire.begin(1);
-    Wire.onReceive(i2cReceive);    
+    Wire.begin(4);                // join i2c bus with address #4
+    Wire.onReceive(i2cReceive);   // register event
+    delay(2000);    
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //|  Send Sync Request
+    //|  Flash the Screen Up
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
-    Wire.beginTransmission(0);
-    Wire.write("SYNC");
-    Wire.endTransmission();
+    wifi(6, "Ferrara-Downstairs");
+    temperature(32);
+    setTemp(72);
+    buttonLight(true);
+    buttonLight(false);    
+    buttonBlower(true);
+    buttonBlower(false);    
+    buttonHeater(true);
+    buttonHeater(false);    
+    buttonBlower(true);
+    buttonBlower(false);    
+    cycle('X',0); 
+    time("12:00");    
+//    i2cReceive(37);
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Main Loop
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  void loop(){ 
-      if (synced == false) { 
-        
-      } else { 
-        
-      }
+  void loop(){
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -72,10 +94,47 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
   void i2cReceive(int howMany) { 
-    Serial.println("Received!");
-    String command = "";
-    while(Wire.available()) command += Wire.read();
-    Serial.println(command);    
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Get it All
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    String fullText = "";
+    while(Wire.available()) {
+        char c = Wire.read();
+        fullText = fullText + c;
+    }
+//    fullText = "UP|070|072|0|1|0|1|0|105|R|-002|11:34";
+    Serial.println("Received : " + fullText);    
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Determine Type
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    String type = fullText.substring(0,2);
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Update
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+//  UP(2)|TEMP(3)|SETTEMP(3)|MOTOR(1)-0,1,2|BLOW(1)|AUX(1)|HEAT(1)|LIGHT(1)|ERROR(3)|CYCLE(1)|REMAIN(4)|TIME(5);
+//  UP|070|072|0|0|0|0|0|105|X|-002|12:00
+    if (type == "UP" && fullText.length() == 37) { 
+        char cycleLetter = 'X';
+        temperature(fullText.substring(3,6).toInt());
+        setTemp(fullText.substring(7,10).toInt());
+        buttonBlower((fullText.substring(13,14).toInt() == 1));
+        buttonHeater((fullText.substring(17,18).toInt() == 1));
+        buttonLight((fullText.substring(19,20).toInt() == 1));
+        error(fullText.substring(21,24).toInt());
+        String tempS = fullText.substring(25,26);
+        cycleLetter = tempS[0];
+        if (cycleLetter == 'R') cycleLetter = 'L'; //Low Run Cycle
+        if (cycleLetter == 'R' && (fullText.substring(13,14).toInt() == 2)) cycleLetter = 'M'; //High Run Cycle        
+        Serial.println("Mode : " + cycleLetter);
+        cycle(cycleLetter, fullText.substring(27,31).toInt());
+        time(fullText.substring(32,37));        
+    }
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Error
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    if (type == "ER") { 
+      
+    }
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -123,12 +182,14 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
   void temperature(int temp) { 
+    if (temp == currentTemp) return;
     makeRect(76, 10,  220, 90, BLACK); 
     String tempS = String(temp);
     char charBuf[4];    
     tempS.toCharArray(charBuf, 4);
     skinnyText(charBuf, 80, textLeft(charBuf, 100, 10, 6), 10, WHITE);    
     if (tempS.length() == 2) skinnyText("o", 72, 175, 3, WHITE); else skinnyText("o", 72, 205, 3, WHITE);     
+    currentTemp = temp;
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -136,12 +197,14 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
   void setTemp(int temp) { 
+    if (temp == tempSet) return;    
     makeRect(195, 5,  80,  40, BLACK); 
     String tempS = String(temp);
     char charBuf[4];    
     tempS.toCharArray(charBuf, 4);
     skinnyText(charBuf, 205, 10, 3, WHITE); 
     if (tempS.length() == 2) skinnyText("o", 202, 50, 1, WHITE); else skinnyText("o", 202, 70, 1, WHITE);     
+    tempSet = temp;
   }
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -149,6 +212,7 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
   void buttonLight(boolean onOff) {
+    if (statusLight == onOff) return;
     if (onOff == true) { 
       makeRect(107, 240,  80, 43, makeColor(30,30,30));
       makeRect(107, 240,  6,  43, WHITE);
@@ -160,6 +224,7 @@
     makeRect(131, 281,  6,  9, makeColor(150,150,150));            
     makeCircle(124, 283, 9, WHITE);  
     makeRect(127, 282,  4,  8, makeColor(150,150,150));              
+    statusLight = onOff;
   }
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -167,6 +232,7 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
   void buttonBlower(boolean onOff) {
+    if (statusBlower == onOff) return;            
     if (onOff == true) { 
       makeRect(151, 240,  80, 43, makeColor(30,30,30));      
       makeRect(151, 240,  6,  43, WHITE);
@@ -179,6 +245,7 @@
     makeCircle(170, 270, 7, WHITE);      
     makeCircle(175, 290, 10, WHITE);      
     makeCircle(182, 276, 3, WHITE);      
+    statusBlower = onOff;
   }
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -186,6 +253,7 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
   void buttonHeater(boolean onOff) { 
+    if (statusHeater == onOff) return;                
     if (onOff == true) { 
       makeRect(195, 240,  80, 45, makeColor(30,30,30));
       makeRect(195, 240,  6,  45, WHITE); 
@@ -198,15 +266,19 @@
     makeCircle(225, 283,  6, WHITE);          
     makeRect(210,   282,  4, 10, RED);          
     makeCircle(225, 283,  5, RED);       
+    statusHeater = onOff;    
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Time
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  void time() { 
+  void time(String timeNow) { 
+    String tempS = String(timeNow);
+    char charBuf[6];    
+    tempS.toCharArray(charBuf, 6); 
     makeRect(195, 130,  105,  40, BLACK);     
-    skinnyText("10:26", 205, textLeft("10:26", 180, 3, 6), 3, WHITE);    
+    skinnyText(charBuf, 205, textLeft(charBuf, 180, 3, 6), 3, WHITE);
   }  
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -214,12 +286,13 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
   void cycle(char cycleType, int cycleLeft) { 
+    if (currentCycle == cycleType && cycleLeft == cycleRemain) return;                
     makeRect(0,  240,  106,  80, makeColor(20,20,20));    
     String descTop  = "";
     String descBot  = "";
     int descColor   = BLACK;
     switch(cycleType) {
-        case 'O' : descTop    = "OFF";                descBot    = "Press Start";                descColor  = makeColor(100,100,100); break;
+        case 'X' : descTop    = "OFF";                descBot    = "Press Start";                descColor  = makeColor(100,100,100); break;
         case 'C' : descTop    = String(cycleLeft);    descBot    = "Cleaning";                   descColor  = makeColor(204,102,255); break; // Blue
         case 'H' : descTop    = String(cycleLeft);    descBot    = "Holding";                    descColor  = makeColor(51,173,51); break; // Green
         case 'M' : descTop    = "MAX";                descBot    = String(cycleLeft) + " min";   descColor  = RED; break; // Red
@@ -239,7 +312,44 @@
     tempS = String(descBot);
     tempS.toCharArray(charBuf, 50);    
     skinnyText(charBuf, 70, textLeft(charBuf, 280, 1, 6), 1, (cycleType == 'O') ? makeColor(100,100,100) : WHITE);            
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Defaults
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    currentCycle = cycleType;
+    cycleLeft    = cycleRemain;
   }  
+
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+//|  Error Function
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+
+  void error(int errorCode) { 
+    String errorMessage = "";
+    switch(errorCode) { 
+      case 101 : errorMessage = "ERROR : LOW PRESSURE"; break;
+      case 102 : errorMessage = "ERROR : TEMP TOO DIFFERENT"; break;
+      case 103 : errorMessage = "ERROR : TEMP OVERAGE"; break;
+      case 104 : errorMessage = "ERROR : MOTOR OFF"; break;      
+      case 105 : errorMessage = "ERROR : BAD THERMISTOR"; break;            
+      default  : return;
+    }    
+    char charBuf[30];    
+    errorMessage.toCharArray(charBuf, 30);     
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Wifi Function
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    int backColor  = RED;
+    int frontColor = WHITE;
+    int deadColor  = makeColor(100,100,100);
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Background Box
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    makeRect(0,0,240,25,backColor);
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Background Box
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    makeText(charBuf, 9, 10, 1, frontColor);
+  }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Text
