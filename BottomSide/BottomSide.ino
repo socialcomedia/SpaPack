@@ -120,7 +120,7 @@
 //| Test Mode
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
-  boolean testMode          = false;
+  boolean testMode          = true;
   String  testText          = "";
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=r-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -231,7 +231,6 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   void buttonPress(int testButton, boolean debounce) { 
-    return;
     int button     = 0;
     int buttonRead = analogRead(inputButton);
     if (testButton > -1) buttonRead = testButton; // Handle Test Mode Serial
@@ -239,7 +238,7 @@
     if (buttonRead >= btnModeLow && buttonRead <= btnModeHigh)   button = 2;
     if (buttonRead >= btnUpLow && buttonRead <= btnUpHigh)       button = 3;
     if (buttonRead >= btnDownLow && buttonRead <= btnDownHigh)   button = 4;    
-    if (debounce == true || button != lastButton) lastButton = button; else return;
+    if (!debounce || (debounce == true && button != lastButton)) lastButton = button; else return;
     switch(button) { 
        case 1 : 
          statusLight = (statusLight == 0) ? 1 : 0; 
@@ -354,7 +353,7 @@
 
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Handle the Motor
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||     
     switch(statusMotor) {
       //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
       //| Off
@@ -396,6 +395,7 @@
       if (digitalRead(relayLow) == HIGH && checkPressure() == false) statusError = 101; // Water Pressure
       if (temperature1 < (temperature2 - tempDiff) && temperature1 > (temperature2 + tempDiff) ) statusError = 102; // Thermistors Match Readings
       if (temperature1 > tempFail || temperature2 > tempFail) statusError = 103; // Overheating over failure temperature   
+      if (testMode) statusError =0;
       if (statusError > 0 ) digitalWrite(relayHeater,  LOW);
       //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
       //| Handle the Heater
@@ -419,6 +419,8 @@
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   boolean updateScreen() {
+    return false;
+    
 //  UP(2)|TEMP(3)|SETTEMP(3)|MOTOR(1)-0,1,2|BLOW(1)|AUX(1)|HEAT(1)|LIGHT(1)|ERROR(3)|CYCLE(1)|REMAIN(4)|TIME(5);
 //  UP|070|072|0|0|0|0|0|105|X|-002|12:00
     String fullText = "";
@@ -478,13 +480,15 @@
   //| Handle Serial Commands
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
-  void handleSerial(byte incomingByte) { 
+  void handleSerial(byte incomingByte) {
+    Serial.println(incomingByte);
     if (incomingByte == 119) buttonPress(btnUpLow,    false);      // KeyPress W
     if (incomingByte == 115) buttonPress(btnDownLow,  false);    // KeyPress S
     if (incomingByte == 97)  buttonPress(btnLightLow, false);   // KeyPress A
     if (incomingByte == 100) buttonPress(btnModeLow,  false);    // KeyPress D 
     if (incomingByte == 99)  setTime(22,59,58,21,11,14); // KeyPress C Test Cleaning Cycle
     if (incomingByte == 104) setTime(17,59,58,22,11,14); // KeyPress H Test Hold Cycle
+    if (incomingByte == 116) testInteger("Current Temp:", getTemp()); // KeyPress T Current Temperature
   }
 
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
