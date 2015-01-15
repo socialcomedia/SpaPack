@@ -56,29 +56,15 @@
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
     char* attempt = "Attempting Communications with Master..";
     skinnyText(attempt, 110, textLeft(attempt, 150, 1, 6), 1, WHITE);
-    makeClear();
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //|  Start Wire Sync
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
     Wire.begin(4);                // join i2c bus with address #4
     Wire.onReceive(i2cReceive);   // register event
-    delay(2000);    
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //|  Flash the Screen Up
+    //|  Wait for Master
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
-    wifi(6, "Ferrara-Downstairs");
-    temperature(32);
-    setTemp(72);
-    buttonLight(true);
-    buttonLight(false);    
-    buttonBlower(true);
-    buttonBlower(false);    
-    buttonHeater(true);
-    buttonHeater(false);    
-    buttonBlower(true);
-    buttonBlower(false);    
-    cycle('X',0); 
-    time("12:00");    
+    delay(5000);
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -95,6 +81,21 @@
 
   void i2cReceive(int howMany) { 
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Initialize
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    if (synced == false) { 
+      makeClear();
+      buttonLight(true);    
+      buttonLight(false);    
+      buttonBlower(true);    
+      buttonBlower(false);    
+      buttonHeater(true);    
+      buttonHeater(false);    
+      cycle('X',0);
+      time("12:00");   
+      synced = true;
+    }
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //|  Get it All
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
     String fullText = "";
@@ -104,36 +105,25 @@
     }
     Serial.println("Received : " + fullText);
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //|  Determine Type
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    String type = fullText.substring(0,2);
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //|  Update
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
-//  UP(2)|TEMP(3)|SETTEMP(3)|MOTOR(1)-0,1,2|BLOW(1)|AUX(1)|HEAT(1)|LIGHT(1)|ERROR(3)|CYCLE(1)|REMAIN(4)|TIME(5);
-//  UP|070|072|0|0|0|0|0|105|X|-002|12:00
-//  UP|072|080|2|0|0|1|0|000|R|0005
-    if (type == "UP" && fullText.length() > 30) { 
-        char cycleLetter = 'X';
-        temperature(fullText.substring(3,6).toInt());
-        setTemp(fullText.substring(7,10).toInt());
-        buttonBlower((fullText.substring(13,14).toInt() == 1));
-        buttonHeater((fullText.substring(17,18).toInt() == 1));
-        buttonLight((fullText.substring(19,20).toInt() == 1));
-        error(fullText.substring(21,24).toInt());
-        String tempS = fullText.substring(25,26);
-        cycleLetter = tempS[0];
-        if (cycleLetter == 'R') cycleLetter = 'L'; //Low Run Cycle
-        if (cycleLetter == 'L' && (fullText.substring(11,12).toInt() == 2)) cycleLetter = 'M'; //High Run Cycle        
-        Serial.println("Mode : " + cycleLetter);
-        cycle(cycleLetter, fullText.substring(27,31).toInt());
-    }
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //|  Update Time
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
-    if (type == "UP" && fullText.length() == 32) {     
-        time(fullText.substring(2,7));
-    }
+//  TEMP(3)|SETTEMP(3)|MOTOR(1)|BLOW(1)|HEAT(1)|LIGHT(1)|ERROR(3)|CYCLE(1)|REMAIN(4)|TIME(5)
+//  0721000000000X-00211:11
+    char cycleLetter = 'X';
+    temperature(fullText.substring(0,3).toInt());
+    setTemp(fullText.substring(3,6).toInt());
+    int motorLevel = fullText.substring(6,7).toInt();
+    buttonBlower((fullText.substring(7,8).toInt() == 1));
+    buttonHeater((fullText.substring(8,9).toInt() == 1));
+    buttonLight((fullText.substring(9,10).toInt() == 1));
+    error(fullText.substring(10,13).toInt());
+    cycleLetter = fullText[13];
+    testString("Error", fullText.substring(10,13));
+    if (cycleLetter == 'R') cycleLetter = 'L'; //Low Run Cycle
+    if (cycleLetter == 'L' && (motorLevel == 2)) cycleLetter = 'M'; //High Run Cycle        
+    Serial.println("Mode : " + cycleLetter);
+    cycle(cycleLetter, fullText.substring(14,18).toInt());
+    time(fullText.substring(18,23));
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -285,7 +275,17 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
   void cycle(char cycleType, int cycleLeft) { 
+    testInteger("Remain", cycleLeft);
+    testString("Cycle", String(cycleType));
     if (currentCycle == cycleType && cycleLeft == cycleRemain) return;                
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Defaults
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    currentCycle = cycleType;
+    cycleRemain  = cycleLeft;
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Draw it
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
     makeRect(0,  240,  106,  80, makeColor(20,20,20));    
     String descTop  = "";
     String descBot  = "";
@@ -311,11 +311,6 @@
     tempS = String(descBot);
     tempS.toCharArray(charBuf, 50);    
     skinnyText(charBuf, 70, textLeft(charBuf, 280, 1, 6), 1, (cycleType == 'O') ? makeColor(100,100,100) : WHITE);            
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //|  Defaults
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
-    currentCycle = cycleType;
-    cycleLeft    = cycleRemain;
   }  
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -330,6 +325,7 @@
       case 103 : errorMessage = "ERROR : TEMP OVERAGE"; break;
       case 104 : errorMessage = "ERROR : MOTOR OFF"; break;      
       case 105 : errorMessage = "ERROR : BAD THERMISTOR"; break;            
+      case 999 : errorMessage = "Test Mode Enabled"; break;                  
       default  : return;
     }    
     char charBuf[30];    
@@ -424,4 +420,17 @@
   }  
   
 
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+//| Test Log
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+
+  void testInteger(String message, int data) { 
+    String strSep = " => ";
+    Serial.println(message + strSep + data);
+  }
+  
+  void testString(String message, String data) { 
+    String strSep = " => ";
+    Serial.println(message + strSep + data);
+  }
   

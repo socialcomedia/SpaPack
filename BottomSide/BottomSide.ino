@@ -1,3 +1,4 @@
+
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  SpaPack v1.0
 //|
@@ -51,9 +52,8 @@
   const int btnDownLow      = 990;      // Analog Low for Temp Down Button
   const int btnDownHigh     = 1010;      // Analog High for Temp Down Button
     
-  int lastButton            = 0;
-  int pressButton           = 0;
-  int debounce              = 0;
+  int lastButton            = -1;
+  int debounce              = -1;
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  High Lows
@@ -84,7 +84,7 @@
   int statusError           = 0;
 
   int currentMode           = 0;        // Mode  (0 = Off, 1 = Low, 2 = High, 3 = High, 4 = Low/Light 5 = High/Light 6 = High/Blower/Light)
-  int tempSet               = 72;      // Temperature Currently Set To    
+  int tempSet               = 100;      // Temperature Currently Set To    
   int currentMin            = 0;        // How we determine the current minute        
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -149,7 +149,7 @@
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Setting the Default Date/Time
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    setTime(12,0,0,1,1,11);    
+    setTime(11,11,11,11,11,11);    
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Setup Inputs
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
@@ -253,20 +253,21 @@
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     int buttonRead = analogRead(inputButton);
     if (testButton > -1) buttonRead = testButton; // Handle Test Mode Serial
-    if (buttonRead < 250) return;
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Get Which Button
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    int button     = buttonWhich(buttonRead);    
+    int button     = buttonWhich(buttonRead);
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Debounce Button
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||        
-    if (testButton == -1) if (!debounceButton(button)) return;
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| We have a press!
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||        
-    lastButton = button;
-    testInteger("Button Press", lastButton);
+    //| See if same as last time
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    if (button == lastButton) return;
+    if (button == 0 && lastButton != 0) { 
+      button     = lastButton;
+      lastButton = 0; 
+    } else {
+      lastButton = button;
+      return;
+    }
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Handle Button
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||        
@@ -295,27 +296,11 @@
          testInteger("Temperature Down", tempSet);         
          break;
     }    
-    updateScreen();
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Small Delay
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||        
-    delay(1);
+    //| Update Screen
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    updateScreen();
   }
-
-  //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-  //| Debounce Button
-  //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-
-  int debounceButton(int button) { 
-//    if (button == lastButton) return false;
-    debounce      = (button == pressButton) ? debounce + 1 : 0;
-    pressButton   = button;
-    if (debounce > 5) { 
-       debounce = 0;
-       return true;  
-    }
-    return false;
-  }  
   
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
   //| Which Button was Pressed?
@@ -485,29 +470,32 @@
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   boolean updateScreen() {
-//  UP(2)|TEMP(3)|SETTEMP(3)|MOTOR(1)-0,1,2|BLOW(1)|AUX(1)|HEAT(1)|LIGHT(1)|ERROR(3)|CYCLE(1)|REMAIN(4)
-//  UP|070|072|0|0|0|0|0|105|X|-002|12:00
+//  TEMP(3)|SETTEMP(3)|MOTOR(1)|BLOW(1)|HEAT(1)|LIGHT(1)|ERROR(3)|CYCLE(1)|REMAIN(4)|TIME(5)
+//  07210000000000X-00211:11
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| SEND UPDATE
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     screenLast++;
     if (screenLast > 100) { 
       String fullText = "";
-      fullText += "UP|";
-      fullText += strPad(String(getTemp()), 3, '0') + '|';
-      fullText += strPad(String(tempSet), 3, '0') + '|';
-      fullText += String(statusMotor) + '|';
-      fullText += String(statusBlower) + '|';
-      fullText += String(statusAux) + '|';    
-      fullText += String(statusHeater) + '|';        
-      fullText += String(statusLight) + '|';
-      fullText += strPad(String(statusError),3,'0') + '|';
-      fullText += String(cycleType) + '|';    
+      fullText += strPad(String(getTemp()), 3, '0');
+      fullText += strPad(String(tempSet), 3, '0');
+      fullText += String(statusMotor);
+      fullText += String(statusBlower);
+      fullText += String(statusHeater);        
+      fullText += String(statusLight);
+      if (statusError == 0 && testMode == true) { 
+        fullText += "999";
+      } else { 
+        fullText += strPad(String(statusError),3,'0');        
+      }
+      fullText += String(cycleType);    
       fullText += strPad(String(cycleRemaining),4,'0');
+      fullText += String(hourFormat12()) + ':' + strPad(String(minute()),2,'0');
       if (fullText != screenText) { 
         Serial.println(fullText);
-        char charBuf[33];    
-        fullText.toCharArray(charBuf, 33);
+        char charBuf[25];    
+        fullText.toCharArray(charBuf, 25);
         Wire.beginTransmission(4);
         Wire.write(charBuf);
         Wire.endTransmission();
@@ -516,15 +504,6 @@
       screenLast = 0;
       screenText = fullText;
     }
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| UPDATE TIME
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-//    char timeBuf[8];    
-//    fullText.toCharArray(timeBuf, 8);
-//    fullText = "TM" + String(hourFormat12()) + ':' + strPad(String(minute()),2,'0') + '|';
-//    Wire.beginTransmission(4);
-//    Wire.write(timeBuf);
-//    Wire.endTransmission();    
   }     
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
