@@ -6,16 +6,16 @@ int led = 13;
 
 
 void setup() {
+    Serial.begin(9600);           // start serial for input and output
+    Serial.println("Slave Ready..");
     pinMode(led, OUTPUT);     
     Wire.begin(4);                // join i2c bus with address #4
     Wire.onReceive(receiveEvent); // register event
-    Serial.begin(9600);           // start serial for input and output
     digitalWrite(led, LOW);
-    Serial.println("Slave Ready..");
 }
 
 void loop() {
- delay(100);
+  delay(100);
 }
 
 void blink(boolean fast) { 
@@ -24,9 +24,9 @@ void blink(boolean fast) {
   int del = (fast) ? 50 : 500;
   int mix = (fast) ? 20 : 5;
   for(i=0;i<mix;i++) { 
-    digitalWrite(13, HIGH);
+    digitalWrite(led, HIGH);
     delay(del);
-    digitalWrite(13, LOW);
+    digitalWrite(led, LOW);
     delay(del);  
   }
 }

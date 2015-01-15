@@ -50,7 +50,7 @@
 
   const int btnDownLow      = 990;      // Analog Low for Temp Down Button
   const int btnDownHigh     = 1010;      // Analog High for Temp Down Button
-  
+    
   int lastButton            = 0;
   int pressButton           = 0;
   int debounce              = 0;
@@ -129,7 +129,7 @@
 //| Test Mode
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
-  boolean testMode          = false;
+  boolean testMode          = true;
   String  testText          = "";
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=r-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -137,6 +137,13 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   void setup() {
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //| Shorten Times for Test Mode
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    Wire.begin(); //join I2C as master    
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //| Setup Wire
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     Serial.begin(9600);
     Serial.println("Setting up the system..");
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -179,10 +186,6 @@
       heaterMaximum         = 6;
       lightMaximum          = 10;
     }
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Shorten Times for Test Mode
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    Wire.begin(); //join I2C as master    
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -218,7 +221,7 @@
 //| Set Temperature
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
-  int getTemp() {
+  int getTemp() {     
      return int((temperature1 + temperature2) / 2);
   }
   
@@ -227,6 +230,11 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   boolean checkTemp() { 
+    if (testMode == true) { 
+       temperature1 = 72;
+       temperature2 = 72;
+       return true;
+    }
     if (tempCount > 1000) { 
       temperature1 = convertTemperature(analogRead(sensorTemp));
       temperature2 = convertTemperature(analogRead(sensorHiTemp));  
@@ -245,6 +253,7 @@
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     int buttonRead = analogRead(inputButton);
     if (testButton > -1) buttonRead = testButton; // Handle Test Mode Serial
+    if (buttonRead < 250) return;
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Get Which Button
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
@@ -252,11 +261,12 @@
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Debounce Button
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||        
-    if (!debounceButton(button)) return;
+    if (testButton == -1) if (!debounceButton(button)) return;
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| We have a press!
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||        
     lastButton = button;
+    testInteger("Button Press", lastButton);
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Handle Button
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||        
@@ -285,6 +295,7 @@
          testInteger("Temperature Down", tempSet);         
          break;
     }    
+    updateScreen();
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Small Delay
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||        
@@ -296,7 +307,7 @@
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   int debounceButton(int button) { 
-    if (button == lastButton) return false;
+//    if (button == lastButton) return false;
     debounce      = (button == pressButton) ? debounce + 1 : 0;
     pressButton   = button;
     if (debounce > 5) { 
@@ -458,7 +469,8 @@
         case 0 : digitalWrite(relayHeater,  LOW);  break;
         case 1 : if (digitalRead(relayLow) == LOW) statusError = 104; // No power to motor
                  if (temperature1 > tempSet) digitalWrite(relayHeater,  LOW); 
-                 if (temperature1 <= tempSet && statusError == 0) digitalWrite(relayHeater,  HIGH);
+                 if (temperature1 <= tempSet && statusError == 0) digitalWrite(relayHeater,  HIGH); else digitalWrite(relayHeater,  LOW);
+                 statusHeater = digitalRead(relayHeater);
                  break;
       }     
       //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -473,32 +485,46 @@
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   boolean updateScreen() {
-//  UP(2)|TEMP(3)|SETTEMP(3)|MOTOR(1)-0,1,2|BLOW(1)|AUX(1)|HEAT(1)|LIGHT(1)|ERROR(3)|CYCLE(1)|REMAIN(4)|TIME(5);
+//  UP(2)|TEMP(3)|SETTEMP(3)|MOTOR(1)-0,1,2|BLOW(1)|AUX(1)|HEAT(1)|LIGHT(1)|ERROR(3)|CYCLE(1)|REMAIN(4)
 //  UP|070|072|0|0|0|0|0|105|X|-002|12:00
-    String fullText = "";
-    fullText += "UP|";
-    fullText += strPad(String(getTemp()), 3, '0') + '|';
-    fullText += strPad(String(tempSet), 3, '0') + '|';
-    fullText += String(statusMotor) + '|';
-    fullText += String(statusBlower) + '|';
-    fullText += String(statusAux) + '|';    
-    fullText += String(statusHeater) + '|';        
-    fullText += String(statusLight) + '|';
-    fullText += strPad(String(statusError),3,'0') + '|';
-    fullText += String(cycleType) + '|';    
-    fullText += strPad(String(cycleRemaining),4,'0') + '|';
-    fullText += String(hourFormat12()) + ':' + strPad(String(minute()),2,'0');
-    if (fullText != screenText || screenLast > 1000) { 
-      Serial.println(fullText);
-      char charBuf[38];    
-      fullText.toCharArray(charBuf, 38);
-      Wire.beginTransmission(4);
-      Wire.write(charBuf);
-      Wire.endTransmission();    
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //| SEND UPDATE
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    screenLast++;
+    if (screenLast > 100) { 
+      String fullText = "";
+      fullText += "UP|";
+      fullText += strPad(String(getTemp()), 3, '0') + '|';
+      fullText += strPad(String(tempSet), 3, '0') + '|';
+      fullText += String(statusMotor) + '|';
+      fullText += String(statusBlower) + '|';
+      fullText += String(statusAux) + '|';    
+      fullText += String(statusHeater) + '|';        
+      fullText += String(statusLight) + '|';
+      fullText += strPad(String(statusError),3,'0') + '|';
+      fullText += String(cycleType) + '|';    
+      fullText += strPad(String(cycleRemaining),4,'0');
+      if (fullText != screenText) { 
+        Serial.println(fullText);
+        char charBuf[33];    
+        fullText.toCharArray(charBuf, 33);
+        Wire.beginTransmission(4);
+        Wire.write(charBuf);
+        Wire.endTransmission();
+        delay(10);      
+      }
       screenLast = 0;
       screenText = fullText;
     }
-    screenLast++;
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //| UPDATE TIME
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+//    char timeBuf[8];    
+//    fullText.toCharArray(timeBuf, 8);
+//    fullText = "TM" + String(hourFormat12()) + ':' + strPad(String(minute()),2,'0') + '|';
+//    Wire.beginTransmission(4);
+//    Wire.write(timeBuf);
+//    Wire.endTransmission();    
   }     
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
