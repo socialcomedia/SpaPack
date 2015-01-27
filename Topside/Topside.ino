@@ -26,6 +26,8 @@
   boolean statusAux             = false;        // 0 = Off / 1 = On    
   boolean statusError           = false;
   char currentCycle         = 'Z';       // Current Cycle
+  String currentTime        = "";        // Current Time
+  int currentError          = 0;         // Current Error
   int currentTemp           = -1;        // Currently Displaying Temperature
   int cycleRemain           = -1;        // Time Remaining in Cycle  
   int tempSet               = -1;        // Temperature Currently Set To    
@@ -263,6 +265,8 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
   void time(String timeNow) { 
+    if (currentTime == timeNow) return;                
+    currentTime = timeNow;
     String tempS = String(timeNow);
     char charBuf[6];    
     tempS.toCharArray(charBuf, 6); 
@@ -318,6 +322,8 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
   void error(int errorCode) { 
+    if (currentError == errorCode) return;
+    currentError = errorCode;
     String errorMessage = "";
     switch(errorCode) { 
       case 101 : errorMessage = "ERROR : LOW PRESSURE"; break;
