@@ -20,10 +20,13 @@
 //|  Sensor Variables
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  const int sensorPressure  = 2;        // Pressure Sensor
-  const int sensorTemp	    = A1;       // Temperature Sensor
-  const int sensorHiTemp    = A2;       // High Limit Sensor
-  const int inputButton     = A3;       // Analog Input for Button
+  const int sensorPressure  = 1;        // Pressure Sensor
+  const int inputBtnMode    = A0;       // Analog Input for Button
+  const int inputBtnUp      = A1;       // Analog Input for Button
+  const int inputBtnDown    = A2;       // Analog Input for Button
+  const int inputBtnLite    = A3;       // Analog Input for Button  
+  const int sensorTemp	    = A6;       // Temperature Sensor
+  const int sensorHiTemp    = A7;       // High Limit Sensor
   
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Relays
@@ -35,26 +38,7 @@
   const int relayAux        = 5;        // Digital Pinout for Aux/Ozone  (110V 10AMP SSR)
   const int relayHeater     = 6;        // Digital Pinout for Heater     (220V 30AMP SSR)
   const int relayLight      = 7;        // Digital Pinout for Lighting 
-  
-//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-//|  Button Resistances
-//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
-
-  const int btnLightLow     = 500;      // Analog Low for Light Button
-  const int btnLightHigh    = 520;      // Analog High for Light Button
-
-  const int btnModeLow      = 645;      // Analog Low for Mode Button
-  const int btnModeHigh     = 665;      // Analog High for Mode Button
-
-  const int btnUpLow        = 765;      // Analog Low for Temp Up Button
-  const int btnUpHigh       = 775;      // Analog High for Temp Up Button
-
-  const int btnDownLow      = 990;      // Analog Low for Temp Down Button
-  const int btnDownHigh     = 1010;      // Analog High for Temp Down Button
     
-  int lastButton            = -1;
-  int debounce              = -1;
-  
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  High Lows
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
@@ -71,6 +55,15 @@
   int temperature1          = -1;      // Current Temperature Probe #1
   int temperature2          = -1;      // Current Temperature Probe #1  
   int tempCount             = 1000;   // How many cycles since we sampled temperature
+
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+//|  Debounce Buttons
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+
+  int debMode              = LOW;
+  int debUp                = LOW;
+  int debDown              = LOW;
+  int debLite              = LOW;
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Current Statuses
@@ -138,10 +131,6 @@
 
   void setup() {
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Shorten Times for Test Mode
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    Wire.begin(); //join I2C as master    
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Setup Wire
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     Serial.begin(9600);
@@ -166,7 +155,10 @@
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Setup Buttons
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    pinMode(inputButton,       INPUT);
+    pinMode(inputBtnMode,      INPUT);
+    pinMode(inputBtnUp,        INPUT);
+    pinMode(inputBtnDown,      INPUT);
+    pinMode(inputBtnLite,      INPUT);
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Disable Everything at First
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
@@ -186,6 +178,11 @@
       heaterMaximum         = 6;
       lightMaximum          = 10;
     }
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Start Wire Sync
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    delay(5000); // the master should be ready after the slave    
+    Wire.begin();                // join i2c bus as master
   }
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -251,23 +248,23 @@
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Get Button Read
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    int buttonRead = analogRead(inputButton);
-    if (testButton > -1) buttonRead = testButton; // Handle Test Mode Serial
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    int btnMode = digitalRead(inputBtnMode);
+    int btnUp   = digitalRead(inputBtnUp);
+    int btnDown = digitalRead(inputBtnDown);
+    int btnLite = digitalRead(inputBtnLite);    
+    int button  = false;
+//    testInteger("Mode",analogRead(inputBtnMode));
+   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Get Which Button
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    int button     = buttonWhich(buttonRead);
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| See if same as last time
-    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    if (button == lastButton) return;
-    if (button == 0 && lastButton != 0) { 
-      button     = lastButton;
-      lastButton = 0; 
-    } else {
-      lastButton = button;
-      return;
-    }
+    if (btnLite == HIGH && debLite == LOW)  {button = 1; debLite = HIGH;}
+    if (btnLite == LOW  && debLite == HIGH) {debLite = LOW;}    
+    if (btnMode == HIGH && debMode == LOW)  {button = 2; debMode = HIGH;}
+    if (btnMode == LOW  && debMode == HIGH) {debMode = LOW;}    
+    if (btnUp == HIGH   && debUp == LOW)    {button = 3; debUp = HIGH;}
+    if (btnUp == LOW    && debUp == HIGH)   {debUp = LOW;}    
+    if (btnDown == HIGH && debDown == LOW)  {button = 4; debDown = HIGH;}
+    if (btnDown == LOW  && debDown == HIGH) {debDown = LOW;}    
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Handle Button
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||        
@@ -300,21 +297,9 @@
     //| Update Screen
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     updateScreen();
+    delay(100);
   }
-  
-  //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-  //| Which Button was Pressed?
-  //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-
-  int buttonWhich(int buttonRead) { 
-    int button = 0;
-    if (buttonRead >= btnLightLow && buttonRead <= btnLightHigh) button = 1;
-    if (buttonRead >= btnModeLow && buttonRead <= btnModeHigh)   button = 2;
-    if (buttonRead >= btnUpLow && buttonRead <= btnUpHigh)       button = 3;
-    if (buttonRead >= btnDownLow && buttonRead <= btnDownHigh)   button = 4;        
-    return button;
-  }
-  
+    
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //| Data Processing
 //| 
@@ -494,11 +479,12 @@
       fullText += String(hourFormat12()) + ':' + strPad(String(minute()),2,'0');
       if (fullText != screenText) { 
         Serial.println(fullText);
-        char charBuf[25];    
-        fullText.toCharArray(charBuf, 25);
-        Wire.beginTransmission(4);
-        Wire.write(charBuf);
-        Wire.endTransmission();
+        Wire.beginTransmission(4);        
+        char charBuf[22];    
+        fullText.toCharArray(charBuf, 22);
+        Wire.write("TESTDATA");
+        int respEnd = Wire.endTransmission();
+        testInteger("Response", respEnd);
         delay(10);      
       }
       screenLast = 0;
@@ -541,10 +527,10 @@
 
   void handleSerial(byte incomingByte) {
     Serial.println(incomingByte);
-    if (incomingByte == 119) buttonPress(btnUpLow);      // KeyPress W
-    if (incomingByte == 115) buttonPress(btnDownLow);    // KeyPress S
-    if (incomingByte == 97)  buttonPress(btnLightLow);   // KeyPress A
-    if (incomingByte == 100) buttonPress(btnModeLow);    // KeyPress D 
+    if (incomingByte == 119) buttonPress(3);      // KeyPress W
+    if (incomingByte == 115) buttonPress(4);    // KeyPress S
+    if (incomingByte == 97)  buttonPress(1);   // KeyPress A
+    if (incomingByte == 100) buttonPress(2);    // KeyPress D 
     if (incomingByte == 99)  setTime(22,59,58,21,11,14); // KeyPress C Test Cleaning Cycle
     if (incomingByte == 104) setTime(17,59,58,22,11,14); // KeyPress H Test Hold Cycle
     if (incomingByte == 116) testInteger("Current Temp:", getTemp()); // KeyPress T Current Temperature
