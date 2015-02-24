@@ -7,7 +7,6 @@
  */
 
 #include <SPI.h>
-#include "nRF24L01.h"
 #include "RF24.h"
 #include "printf.h"
 
@@ -27,11 +26,11 @@ public: RF24Test(int a, int b): RF24(a,b) {}
 
 // Set up nRF24L01 radio on SPI bus plus pins 8 & 9
 
-RF24Test radio(8,9);
+RF24Test radio(48,49);
 
 // sets the role of this unit in hardware.  Connect to GND to be the 'pong' receiver
 // Leave open to be the 'ping' transmitter
-const int role_pin = 7;
+const int role_pin = 5;
 
 //
 // Topology
@@ -69,7 +68,7 @@ bool notified; //*< Have we notified the user we're done? */
 const int num_needed = 10; //*< How many success/failures until we're done? */
 int receives_remaining = num_needed; //*< How many ack packets until we declare victory? */
 int failures_remaining = num_needed; //*< How many more failed sends until we declare failure? */
-const int interval = 100; //*< ms to wait between sends */
+int interval = 100; //*< ms to wait between sends */
 
 char configuration = '1'; //*< Configuration key, one char sent in by the test framework to tell us how to configure, this is the default */
 
@@ -134,7 +133,6 @@ void setup(void)
   //
 
   radio.begin();
-
   //
   // Open pipes to other nodes for communication
   //
@@ -190,11 +188,11 @@ void loop(void)
     // Now, continue listening
     radio.startListening();
 
-    // Wait here until we get a response, or timeout (250ms)
-    unsigned long started_waiting_at = millis();
+    // Wait here until we get a response, or timeout
+    unsigned long started_waiting_at = micros();
     bool timeout = false;
     while ( ! radio.available() && ! timeout )
-      if (millis() - started_waiting_at > 200 )
+      if (micros() - started_waiting_at > radio.getMaxTimeout() )
         timeout = true;
 
     // Describe the results
@@ -230,28 +228,28 @@ void loop(void)
       // Dump the payloads until we've gotten everything
       unsigned long got_time;
       bool done = false;
-      while (!done)
+      while (radio.available())
       {
         // Fetch the payload, and see if this was the last one.
-        done = radio.read( &got_time, sizeof(unsigned long) );
-
-        // Spew it
-        printf("Got payload %lu...",got_time);
-
+        radio.read( &got_time, sizeof(unsigned long) );
+      }
 	// Delay just a little bit to let the other unit
 	// make the transition to receiver
-	delay(20);
-      }
+	//delay(20);
+      //}
 
       // First, stop listening so we can talk
       radio.stopListening();
+      
+              // Spew it
+        printf("Got payload %lu...",got_time);
 
       // Send the final one back.
       radio.write( &got_time, sizeof(unsigned long) );
-      printf("Sent response.\n\r");
 
       // Now, resume listening so we catch the next packets.
       radio.startListening();
+      printf("Sent response.\n\r");
 
     }
   }

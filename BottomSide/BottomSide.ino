@@ -9,12 +9,23 @@
   #include <math.h>
   #include <SPI.h> 
   #include <Wire.h>   
+  #include "nRF24L01.h"
+  #include "RF24.h"
+  
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Version
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
   const float thisVer      = 1.17;
+    
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+//|  RF24 Setup
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+
+  int myRFID    = 101;
+  RF24 radio(10,9);
+  const uint64_t pipes[2] = { 0xF0F0F0F0E1LL, 0x7365727631LL };
     
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Sensor Variables
@@ -27,7 +38,7 @@
   const int inputBtnLite    = A3;       // Analog Input for Button  
   const int sensorTemp	    = A6;       // Temperature Sensor
   const int sensorHiTemp    = A7;       // High Limit Sensor
-  
+
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Relays
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
@@ -52,18 +63,16 @@
 //|  Analog Readings
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  int temperature1          = -1;      // Current Temperature Probe #1
-  int temperature2          = -1;      // Current Temperature Probe #1  
+  int temperature1          = 72;      // Current Temperature Probe #1
+  int temperature2          = 72;      // Current Temperature Probe #1  
   int tempCount             = 1000;   // How many cycles since we sampled temperature
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Debounce Buttons
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
 
-  int debMode              = LOW;
-  int debUp                = LOW;
-  int debDown              = LOW;
-  int debLite              = LOW;
+  int buttonState          = HIGH;
+  int lastButton           = -1;
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //|  Current Statuses
@@ -116,13 +125,13 @@
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   String screenText        = "";
-  int screenLast           = 0;
+  int screenLast           = 100;
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=r-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
 //| Test Mode
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
-  boolean testMode          = true;
+  boolean testMode          = false;
   String  testText          = "";
 
 //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=r-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
@@ -179,6 +188,17 @@
       lightMaximum          = 10;
     }
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Setup Radio
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    radio.begin();
+    radio.setDataRate(RF24_250KBPS);
+    radio.setPALevel(RF24_PA_MAX);
+    radio.setChannel(76);
+    radio.setRetries(15,15);
+    radio.setCRCLength(RF24_CRC_16);     
+    radio.openWritingPipe(pipes[0]);
+    radio.openReadingPipe(1,pipes[1]); 
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //|  Start Wire Sync
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
     delay(5000); // the master should be ready after the slave    
@@ -197,6 +217,7 @@
     }
     checkTemp();
     cycleTime();
+    checkPressure();
     processAll();   
     buttonPress(-1);
   }
@@ -211,6 +232,11 @@
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
 
   boolean checkPressure() {
+    if (digitalRead(sensorPressure) == HIGH) {
+      Serial.println("HIGH");
+    }else { 
+      Serial.println("LOW");      
+    }
     return (digitalRead(sensorPressure) == HIGH);
   } 
 
@@ -232,7 +258,7 @@
        temperature2 = 72;
        return true;
     }
-    if (tempCount > 1000) { 
+    if (tempCount > 5000) { 
       temperature1 = convertTemperature(analogRead(sensorTemp));
       temperature2 = convertTemperature(analogRead(sensorHiTemp));  
       tempCount    = 0;
@@ -246,29 +272,34 @@
 
   void buttonPress(int testButton) { 
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Get Button Read
+    //| See if We Have a Button Press
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    int btnMode = digitalRead(inputBtnMode);
-    int btnUp   = digitalRead(inputBtnUp);
-    int btnDown = digitalRead(inputBtnDown);
-    int btnLite = digitalRead(inputBtnLite);    
-    int button  = false;
-//    testInteger("Mode",analogRead(inputBtnMode));
+    int btnMode = analogRead(inputBtnMode);
+    int btnUp   = analogRead(inputBtnUp);
+    int btnDown = analogRead(inputBtnDown);
+    int btnLite = analogRead(inputBtnLite);    
+    if (btnMode < 900 && btnLite < 900 && btnDown < 900 && btnUp < 900) {
+      lastButton = -1;
+      return;
+    }
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //| Which Button Is It?
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    int highButton = 0;
+    int highValue  = 0;
+    if (btnMode > highValue) { highButton = 1; highValue = btnMode; }
+    if (btnUp > highValue)   { highButton = 2; highValue = btnUp; }
+    if (btnDown > highValue) { highButton = 3; highValue = btnDown; }    
+    if (btnLite > highValue) { highButton = 4; highValue = btnLite; }    
    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
-    //| Get Which Button
+    //| Is it Still the same button
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
-    if (btnLite == HIGH && debLite == LOW)  {button = 1; debLite = HIGH;}
-    if (btnLite == LOW  && debLite == HIGH) {debLite = LOW;}    
-    if (btnMode == HIGH && debMode == LOW)  {button = 2; debMode = HIGH;}
-    if (btnMode == LOW  && debMode == HIGH) {debMode = LOW;}    
-    if (btnUp == HIGH   && debUp == LOW)    {button = 3; debUp = HIGH;}
-    if (btnUp == LOW    && debUp == HIGH)   {debUp = LOW;}    
-    if (btnDown == HIGH && debDown == LOW)  {button = 4; debDown = HIGH;}
-    if (btnDown == LOW  && debDown == HIGH) {debDown = LOW;}    
+    if (lastButton == highButton) return;
+    lastButton = highButton;
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
     //| Handle Button
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||        
-    switch(button) { 
+    switch(highButton) { 
        case 1 : 
          statusLight = (statusLight == 0) ? 1 : 0; 
          if (statusLight == 0)   lightRemaining  = -2;
@@ -480,11 +511,11 @@
       if (fullText != screenText) { 
         Serial.println(fullText);
         Wire.beginTransmission(4);        
-        char charBuf[22];    
-        fullText.toCharArray(charBuf, 22);
-        Wire.write("TESTDATA");
-        int respEnd = Wire.endTransmission();
-        testInteger("Response", respEnd);
+        char charBuf[24];    
+        fullText.toCharArray(charBuf, 24);
+        Wire.write(charBuf);
+        byte respEnd = Wire.endTransmission();
+        Serial.println(respEnd);
         delay(10);      
       }
       screenLast = 0;
@@ -603,6 +634,152 @@
     //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
     currentMin = minute();
   }
+  
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+//|  Send Radio
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+
+  void sendRadio(char* payLoad) { 
+     radio.stopListening();
+    Serial.println("Sending: " + String(payLoad)); 
+    if ( radio.write( payLoad, strlen(payLoad)) ) {
+      Serial.println("Send successful\n\r");
+    } else {
+      Serial.println("Send failed\n\r");
+    }
+    radio.startListening();
+    delay(20);    
+  }  
+  
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+//|  Hande the Read
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+
+  void handleRadioRead(int fromID, char* payLoad) { 
+    String action;
+    if (fromID == 100) {  //Rasp Pi
+      //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+      //|  Get the Action
+      //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+      action = String(payLoad[0] + payLoad[1] + payLoad[2]);
+      //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+      //|  Hande the Read      
+      //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+      if (action == "SET") {
+        char temp[4];
+        temp[0]   = payLoad[3];
+        temp[1]   = payLoad[4];
+        temp[2]   = payLoad[5];    
+        temp[3]   = '\0';
+        int theVal = atoi(temp);
+        tempSet = (theVal < tempMax || theVal > tempMin) ? theVal : tempSet;
+         sendData(fromID, {"1"});
+      }
+      //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+      //|  Handle the Get      
+      //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+      if (action == "GET") {
+        char temp[4];
+        dtostrf(tempSet, 3, 0, temp);
+        sendData(fromID, temp);
+      }
+      //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+      //|  Handle the Cycle
+      //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+      if (action == "SMO") {
+        startCycle(payLoad[0]);    
+        sendData(fromID, {"1"});
+      }
+      //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+      //|  Handle the Light
+      //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+      if (action == "SLI") {
+         if (payLoad[0] == '0' && payLoad[0] == '1') statusLight = int(payLoad[0]);
+         sendData(fromID, {"1"});
+      }
+    }
+  }
+  
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+//|  Read the Radio
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+
+  void readRadio() { 
+    char temp[4];
+    int i;
+    char receivePayload[32];
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Get the From 
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    while ( radio.available()) {
+      uint8_t len = radio.getDynamicPayloadSize();
+      radio.read( receivePayload, len);
+      receivePayload[len] = 0;
+      delay(10);
+    }
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Get the From 
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    temp[0]   = receivePayload[0];
+    temp[1]   = receivePayload[1];
+    temp[2]   = receivePayload[2];    
+    temp[3]   = '\0';
+    int fromID = atoi(temp);
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Get the Dest
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    temp[0]   = receivePayload[3];
+    temp[1]   = receivePayload[4];
+    temp[2]   = receivePayload[5];    
+    temp[3]   = '\0';
+    int destID = atoi(temp);
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Get the Payload
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    char passPayLoad[26];
+    for ( i = 0;i <= 26; i++) passPayLoad[i] = receivePayload[i+6];
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  If the destination is not us
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||    
+    if (destID == 0) return;
+    Serial.println("-->" + String(destID));
+    if (destID != myRFID) {
+      Serial.println("Not for Me" + String(receivePayload));
+      sendRadio(receivePayload); 
+    } else handleRadioRead(fromID, passPayLoad);
+  }
+  
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+//|  Send Data Radio
+//|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+
+  void sendData(int destID, char* myPayLoad) { 
+    char temp[4];
+    char outBuffer[32]    =  "";
+    int i;
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Create Payload From
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    dtostrf(myRFID, 3, 0, temp);
+    outBuffer[0] = temp[0];
+    outBuffer[1] = temp[1];
+    outBuffer[2] = temp[2];    
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Create Payload Destination
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    dtostrf(destID, 3, 0, temp);    
+    outBuffer[3] = temp[0];
+    outBuffer[4] = temp[1];
+    outBuffer[5] = temp[2];    
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Send to Radio
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    for ( i = 0;i <= 26; i++) outBuffer[i + 6] = myPayLoad[i];
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
+    //|  Send Radio
+    //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-||
+    sendRadio(outBuffer);
+  }  
 
   //|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|| 
   //| Test Log
